@@ -1,3 +1,4 @@
+//go:build js && wasm
 // +build js,wasm
 
 // WebAssembly program webwormhole is a set of wrappers for webwormhole and

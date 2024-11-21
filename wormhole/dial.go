@@ -37,6 +37,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/url"
@@ -155,6 +156,12 @@ func (c *Wormhole) Write(p []byte) (n int, err error) {
 
 // Read read a message from the default DataChannel.
 func (c *Wormhole) Read(p []byte) (n int, err error) {
+	defer func() {
+		if err == nil {
+			return
+		}
+		log.Printf("Wormhole.Read via %T returning (%d, %+v)", c.rwc, n, err)
+	}()
 	return c.rwc.Read(p)
 }
 
@@ -259,8 +266,8 @@ func writeBase64(ws *websocket.Conn, p []byte) error {
 // and ICE servers to use.
 func readInitMsg(ws *websocket.Conn) (slot string, iceServers []webrtc.ICEServer, err error) {
 	msg := struct {
-		Slot       string             `json:"slot",omitempty`
-		ICEServers []webrtc.ICEServer `json:"iceServers",omitempty`
+		Slot       string             `json:"slot,omitempty"`
+		ICEServers []webrtc.ICEServer `json:"iceServers,omitempty"`
 	}{}
 
 	_, buf, err := ws.Read(context.TODO())
@@ -307,7 +314,7 @@ func (c *Wormhole) newPeerConnection(ice []webrtc.ICEServer) error {
 		ICEServers: ice,
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create peer connection (via %v): %w", ice, err)
 	}
 
 	sigh := true
@@ -316,10 +323,10 @@ func (c *Wormhole) newPeerConnection(ice []webrtc.ICEServer) error {
 		ID:         new(uint16),
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create data channel: %w", err)
 	}
 	c.d.OnOpen(c.open)
-	c.d.OnError(c.error)
+	c.onError(c.error)
 	c.d.OnBufferedAmountLow(c.flushed)
 	// Any threshold amount >= 1MiB seems to occasionally lock up pion.
 	// Choose 512 KiB as a safe default.
@@ -329,7 +336,11 @@ func (c *Wormhole) newPeerConnection(ice []webrtc.ICEServer) error {
 
 // IsRelay returns whether this connection is over a TURN relay or not.
 func (c *Wormhole) IsRelay() bool {
-	stats := c.pc.GetStats()
+	if c == nil {
+		panic("wormhole is nil")
+	}
+
+	stats := c.getStats()
 	for _, s := range stats {
 		pairstats, ok := s.(webrtc.ICECandidatePairStats)
 		if !ok {
