@@ -306,7 +306,7 @@ func (c *Wormhole) newPeerConnection(ice []webrtc.ICEServer) error {
 	// that we do this voodoo.
 	s := webrtc.SettingEngine{}
 	s.DetachDataChannels()
-	s.SetICEProxyDialer(proxy.FromEnvironment())
+	setICEProxyDialer(&s, proxy.FromEnvironment())
 	rtcapi := webrtc.NewAPI(webrtc.WithSettingEngine(s))
 
 	var err error
